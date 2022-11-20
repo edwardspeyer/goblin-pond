@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf8"></meta>
+<style>
+
+html, body {
+  /* Disable scrolling */
+  overflow: hidden;
+}
+
+body {
+  background: #9d5; 
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+body.win {
+  background: #4d8;
+}
+
+body.lose {
+  background: #a35;
+}
+
+svg {
+  max-height: 100vh;
+  max-width: 100vw;
+}
+
+#island {
+  fill: #9d5;
+}
+
+#pond {
+  fill: #0bc;
+}
+
+#boat {
+  fill: #ed0;
+}
+
+#goblin {
+  fill: #a35;
+}
+
+#goblin.despondent {
+  fill: #639;
+}
+
+#dock {
+  fill: #e94;
+}
+
+#route circle {
+  fill: #09c;
+}
+
+line, #horizon {
+  fill: none;
+  stroke: #09c;
+  stroke-width: 0.3;
+  stroke-dasharray: 1 0.5;
+}
+
+</style>
+</head>
+<body>
+
+<svg viewBox="-50 -50 100 100">
+  <circle id=pond cx=0 cy=0 r=45 />
+  <circle id=horizon cx=0 cy=0 r=33 />
+  <line id=dock_to_boat />
+  <line id=dock_to_goblin />
+  <g id=route />
+  <circle id=island cx=0 cy=0 r=1 />
+  <circle id=dock cx=45 cy=0 r=1 />
+  <circle id=goblin cx=45 cy=0 r=2 />
+  <polygon id=boat points="-2,2 -2,-2, 3,0"  />
+</svg>
+
+</body>
+<script>
+
+const BOAT_SPEED = 0.3;
+const GOBLIN_SPEED = 4.5 * BOAT_SPEED;
+const TURN_INCREMENT = Math.PI / 10;
+const RADIANS_TO_DEGREES = 180 / Math.PI;
+const POND_RADIUS = 45;
+const ROUTE_LENGTH = 75;
+const ROUTE_RATE = 4;
+
+let route = [];
+let goblin = {th:0, x:45, y:0};
+let dock = {th:0, x:45, y:0};
+let boat = {th:0, x:0, y:0};
+let state = "play";
+let T = 0;
+
+function update() {
+    T += 1;
+
+    document.body.classList = "";
+
+    if (touching(boat, goblin, 1)) {
+        document.body.classList = state = "lose";
+    } else if (touching(boat, dock, 1)) {
+        document.body.classList = state = "win";
+    } else {
+        state = "play";
+    }
+
+    updateBoat();
+    updateDock();
+    if (state != "win") updateGoblin();
+    updatePath();
+    updateInstrumentation();
+}
+
+function translate(x, y) {
+    return `translate(${x} ${y})`;
+}
+
+function rotate(theta) {
+    return `rotate(${theta * RADIANS_TO_DEGREES} 0 0)`;
+}
+
+function attr(el, attributes) {
+    for (const [k, v] of Object.entries(attributes))
+        el.setAttribute(k, v);
+}
+
+function transform(el, ...functions) {
+    attr(el, {transform: functions.join(' ')});
+}
+
+function distance(a, b) {
+    let x2 = (a.x - b.x) ** 2, y2 = (a.y - b.y) ** 2;
+    return Math.sqrt(x2 + y2);
+}
+
+function touching(a, b, d) {
+    return distance(a, b) < d;
+}
+
+function updateBoat() {
+    let dx = Math.cos(boat.th) * BOAT_SPEED;
+    let dy = Math.sin(boat.th) * BOAT_SPEED;
+    let br = (boat.x + dx) ** 2 + (boat.y + dy) ** 2;
+    if (br < 45 ** 2) {
+        boat.x += dx;
+        boat.y += dy;
+    }
+    transform(window.boat, translate(boat.x, boat.y), rotate(boat.th));
+}
+
+function updateDock() {
+    let Q = Math.atan(boat.y / boat.x) + (boat.x < 0 ? Math.PI : 0);
+    let H = boat.th;
+    let b = Math.sqrt(boat.x ** 2 + boat.y ** 2);
+    let R = H + Math.PI - Q;
+    let r = POND_RADIUS;
+    let B = Math.asin(b * Math.sin(R) / r);
+    let E = Math.PI - R - B;
+    let L = Q - E;
+    dock.th = L;
+    dock.x = POND_RADIUS * Math.cos(L);
+    dock.y = POND_RADIUS * Math.sin(L);
+    transform(window.dock, rotate(L));
+}
+
+function updatePath() {
+    if (T % ROUTE_RATE != 0) return;
+    let g = document.querySelector('#route');
+    let dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    attr(dot, {cx:boat.x, cy:boat.y, r:0.4})
+    document.querySelector('#route').appendChild(dot);
+
+    route.unshift(dot);
+    while (route.length > ROUTE_LENGTH) route.pop().remove();
+
+    route.forEach((dot, index) => {
+        let opacity = 0.9 - index / ROUTE_LENGTH;
+        attr(dot, {opacity:opacity});
+    });
+}
+
+function updateInstrumentation() {
+    attr(window.dock_to_boat, {x2:boat.x, y2:boat.y, x1:dock.x, y1:dock.y});
+    attr(window.dock_to_goblin, {x1:dock.x, y1:dock.y, x2:goblin.x, y2:goblin.y});
+
+    let th = goblin.th - dock.th;
+    if (th < -Math.PI) th += 2 * Math.PI;
+    if (th > +Math.PI) th -= 2 * Math.PI;
+    let gd = Math.abs(POND_RADIUS * th);
+    let x = gd / (GOBLIN_SPEED / BOAT_SPEED);
+    let hr = POND_RADIUS - x;
+    attr(window.horizon, {r:hr});
+}
+
+function updateGoblin() {
+    if (touching(goblin, dock, 1)) {
+        return;
+    }
+
+    let delta_th = dock.th - goblin.th;
+    if (delta_th > +Math.PI) delta_th -= 2 * Math.PI;
+    if (delta_th < -Math.PI) delta_th += 2 * Math.PI;
+
+    let bt = distance(boat, dock) / BOAT_SPEED;
+    let gt = (POND_RADIUS * delta_th) / GOBLIN_SPEED;
+    window.goblin.classList = (Math.abs(bt) < Math.abs(gt)) ? "despondent" : "";
+
+    let goblin_angular_speed = GOBLIN_SPEED / POND_RADIUS;
+    goblin.th += (delta_th < 0 ? -1 : +1) * goblin_angular_speed;
+    goblin.x = POND_RADIUS * Math.cos(goblin.th);
+    goblin.y = POND_RADIUS * Math.sin(goblin.th);
+    transform(window.goblin, rotate(goblin.th));
+}
+
+window.addEventListener('keydown', event => {
+    if (event.key == 'a' || event.key == 'ArrowLeft') {
+        boat.th -= TURN_INCREMENT;
+    }
+    if (event.key == 'd' || event.key == 'ArrowRight') {
+        boat.th += TURN_INCREMENT;
+    }
+});
+
+/* Mouse listener */
+const svg = document.querySelector('svg');
+
+function handlePointer(x, y) {
+    let point = svg.createSVGPoint();
+    point.x = x, point.y = y
+    point = point.matrixTransform(svg.getScreenCTM().inverse());
+    let dx = point.x - boat.x, dy = point.y - boat.y;
+    boat.th = Math.atan(dy / dx);
+    if (dx < 0) boat.th += Math.PI;
+}
+
+window.addEventListener('mousemove', event => {
+    event.preventDefault();
+    handlePointer(event.clientX, event.clientY);
+});
+
+window.addEventListener('touchmove', event => {
+    event.preventDefault();
+    let t = event.touches[0];
+    handlePointer(t.pageX, t.pageY);
+});
+
+window.setInterval(update, 1000/60);
+
+</script>
+</html>
