@@ -14,6 +14,7 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  font-family: monospace;
 }
 
 body.win {
@@ -53,6 +54,10 @@ svg {
   fill: #e94;
 }
 
+#closest {
+  fill: #639;
+}
+
 #route circle {
   fill: #09c;
 }
@@ -68,14 +73,21 @@ line, #horizon {
 </head>
 <body>
 
+<form>
+  <input type="radio" name="gobstrat" value="CLOSEST" checked>CLOSEST</input>
+  <input type="radio" name="gobstrat" value="DOCK">DOCK</input>
+</form>
+
 <svg viewBox="-50 -50 100 100">
   <circle id=pond cx=0 cy=0 r=45 />
   <circle id=horizon cx=0 cy=0 r=33 />
+  <line id=closest_to_boat x1=0 y1=0 />
   <line id=dock_to_boat />
   <line id=dock_to_goblin />
   <g id=route />
   <circle id=island cx=0 cy=0 r=1 />
   <circle id=dock cx=45 cy=0 r=1 />
+  <circle id=closest cx=45 cy=0 r=1 />
   <circle id=goblin cx=45 cy=0 r=2 />
   <polygon id=boat points="-2,2 -2,-2, 3,0"  />
 </svg>
@@ -93,6 +105,7 @@ const ROUTE_RATE = 4;
 
 let route = [];
 let goblin = {th:0, x:45, y:0};
+let closest = {th:0, x:45, y:0};
 let dock = {th:0, x:45, y:0};
 let boat = {th:0, x:0, y:0};
 let state = "play";
@@ -113,7 +126,11 @@ function update() {
 
     updateBoat();
     updateDock();
-    if (state != "win") updateGoblin();
+    if (state != "win") {
+        let targets = {CLOSEST: closest, DOCK: dock};
+        let target = targets[document.forms[0].gobstrat.value];
+        updateGoblin(target);
+    }
     updatePath();
     updateInstrumentation();
 }
@@ -153,6 +170,14 @@ function updateBoat() {
         boat.y += dy;
     }
     transform(window.boat, translate(boat.x, boat.y), rotate(boat.th));
+
+    // Update the closest point
+    closest.th = Math.atan(boat.y / boat.x);
+    if (boat.x < 0) closest.th += Math.PI;
+    closest.x = POND_RADIUS * Math.cos(closest.th);
+    closest.y = POND_RADIUS * Math.sin(closest.th);
+    attr(window.closest, {cx:closest.x, cy:closest.y});
+    attr(window.closest_to_boat, {x2:closest.x, y2:closest.y});
 }
 
 function updateDock() {
@@ -199,16 +224,16 @@ function updateInstrumentation() {
     attr(window.horizon, {r:hr});
 }
 
-function updateGoblin() {
-    if (touching(goblin, dock, 1)) {
+function updateGoblin(target) {
+    if (touching(goblin, target, 1)) {
         return;
     }
 
-    let delta_th = dock.th - goblin.th;
+    let delta_th = target.th - goblin.th;
     if (delta_th > +Math.PI) delta_th -= 2 * Math.PI;
     if (delta_th < -Math.PI) delta_th += 2 * Math.PI;
 
-    let bt = distance(boat, dock) / BOAT_SPEED;
+    let bt = distance(boat, target) / BOAT_SPEED;
     let gt = (POND_RADIUS * delta_th) / GOBLIN_SPEED;
     window.goblin.classList = (Math.abs(bt) < Math.abs(gt)) ? "despondent" : "";
 
